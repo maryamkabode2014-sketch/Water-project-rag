@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import tempfile
 import streamlit as st
@@ -49,14 +50,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown('<div class="main-title">💧 سامانه هوشمند تحلیل فنی پروژه‌های آب و خاک</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">تحلیل و انطباق فنی اسناد، آیین‌نامه‌ها و طرح‌های آبیاری بر پایه هوش مصنوعی (Claude)</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="main-title">💧 سامانه هوشمند تحلیل فنی پروژه‌های آب و خاک</div>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    '<div class="sub-title">تحلیل و انطباق فنی اسناد، آیین‌نامه‌ها و طرح‌های آبیاری بر پایه هوش مصنوعی (Claude)</div>',
+    unsafe_allow_html=True,
+)
 
 with st.sidebar:
     st.markdown("### راهنمای مدیران و ناظران فنی")
-    st.info(
-        "این سامانه برای بارگذاری اسناد فنی و پاسخ‌گویی تحلیلی بر اساس همان اسناد طراحی شده است."
-    )
+    st.info("این سامانه برای بارگذاری اسناد فنی و پاسخ‌گویی تحلیلی بر اساس همان اسناد طراحی شده است.")
     st.markdown("---")
     st.markdown("### تنظیمات مدل")
     api_key_input = st.text_input("کلید API را وارد کنید (در صورت نیاز):", type="password")
@@ -88,11 +93,12 @@ if uploaded_files:
                 with st.spinner("در حال پردازش و ساخت پایگاه دانش..."):
                     all_docs = []
                     splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=120)
-                    
+
                     for uploaded_file in uploaded_files:
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                             tmp_file.write(uploaded_file.read())
                             tmp_path = tmp_file.name
+
                         loader = PyPDFLoader(tmp_path)
                         pages = loader.load()
                         for p in pages:
