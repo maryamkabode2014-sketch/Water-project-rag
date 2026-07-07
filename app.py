@@ -7,8 +7,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from huggingface_hub import InferenceClient
-from huggingface_hub.errors import HfHubHTTPError
+import requests
 
 # ---------------------------
 # Page Config
@@ -162,6 +161,7 @@ HF_TOKEN = "YOUR_HF_TOKEN"
         [
             "deepseek-ai/DeepSeek-V3-0324",
             "meta-llama/Llama-3.3-70B-Instruct",
+            "Qwen/Qwen2.5-7B-Instruct",
         ],
         index=0
     )
@@ -241,21 +241,37 @@ def answer_question(vectorstore, question: str, hf_token: str, model_name: str, 
         f"متن سند:\n{context}"
     )
 
+    url = "https://router.huggingface.co/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {hf_token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+        ],
+        "max_tokens": 1500,
+        "temperature": 0.2,
+    }
+
     try:
-        client = InferenceClient(model=model_name, token=hf_token, provider="together")
-        response = client.chat_completion(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question},
-            ],
-            max_tokens=1500,
-            temperature=0.2,
-        )
-        answer = response.choices[0].message.content
+        resp = requests.post(url, headers=headers, json=payload, timeout=90)
+        resp.raise_for_status()
+        data = resp.json()
+        answer = data["choices"][0]["message"]["content"]
         return answer, relevant_docs
-    except HfHubHTTPError as e:
-        print(f"[HfHubHTTPError] {e}")
-        st.error(f"خطا در ارتباط با سرویس Hugging Face: {e}")
+    except requests.exceptions.HTTPError as e:
+        body = e.response.text if e.response is not None else str(e)
+        print(f"[HTTPError] {e} | body={body}")
+        st.error(f"خطا در ارتباط با سرویس: {body}")
+    except requests.exceptions.RequestException as e:
+        print(f"[RequestException] {e}")
+        st.error(f"خطا در اتصال شبکه: {e}")
+    except (KeyError, IndexError) as e:
+        print(f"[ParseError] {e} | raw={resp.text if 'resp' in dir() else 'N/A'}")
+        st.error("پاسخ سرویس در قالب مورد انتظار نبود.")
     except Exception as e:
         import traceback
         print(f"[Unexpected Error] {type(e).__name__}: {e}")
