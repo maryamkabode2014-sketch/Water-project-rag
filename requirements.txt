@@ -7,4 +7,4 @@ anthropic==0.34.2
 langchain-huggingface==0.0.3
 sentence-transformers==3.0.1
 faiss-cpu==1.8.0.post1
-pdfplumber==0.
+pdfplumber==0.11.4
