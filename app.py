@@ -160,9 +160,9 @@ HF_TOKEN = "YOUR_HF_TOKEN"
     model_name = st.selectbox(
         "مدل زبانی (متن‌باز، پشتیبان فارسی)",
         [
+            "deepseek-ai/DeepSeek-V3-0324",
+            "moonshotai/Kimi-K2-Instruct-0905",
             "Qwen/Qwen2.5-7B-Instruct",
-            "CohereForAI/aya-expanse-8b",
-            "mistralai/Mistral-7B-Instruct-v0.3",
         ],
         index=0
     )
@@ -243,7 +243,7 @@ def answer_question(vectorstore, question: str, hf_token: str, model_name: str, 
     )
 
     try:
-        client = InferenceClient(model=model_name, token=hf_token)
+        client = InferenceClient(model=model_name, token=hf_token, provider="auto")
         response = client.chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
