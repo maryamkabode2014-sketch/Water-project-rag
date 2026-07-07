@@ -157,7 +157,7 @@ ANTHROPIC_API_KEY = "YOUR_NEW_KEY"
     top_k = st.slider("تعداد بخش‌های مرتبط برای پاسخ", 1, 10, 4)
     model_name = st.selectbox(
         "مدل Claude",
-        ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-8"],
+        ["claude-sonnet-5", "claude-haiku-4-5-20251001", "claude-opus-4-8"],
         index=0
     )
 
