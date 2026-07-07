@@ -1,227 +1,198 @@
-# -*- coding: utf-8 -*-
 import os
 import tempfile
 import streamlit as st
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_anthropic import ChatAnthropic
-from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
 
-st.set_page_config(
-    page_title="سامانه هوشمند تحلیل فنی پروژه‌های آب و خاک",
-    page_icon="💧",
-    layout="wide",
-)
+# ----------------------------
+# صفحه و استایل
+# ----------------------------
+st.set_page_config(page_title="سامانه تحلیل گزارش‌های فنی آب", layout="wide")
 
-st.markdown(
-    """
-    <style>
-    @import url('https://v1.fontapi.ir/css/Vazir');
-    html, body, [class*="css"] {
-        font-family: 'Vazir', sans-serif;
+st.markdown("""
+<style>
+    .main {
         direction: rtl;
         text-align: right;
+        font-family: Vazirmatn, Arial, sans-serif;
     }
-    .main-title {
-        color: #1E3A8A;
-        font-size: 32px;
-        font-weight: bold;
-        text-align: center;
-        margin-bottom: 5px;
-    }
-    .sub-title {
-        color: #4B5563;
-        font-size: 18px;
-        text-align: center;
-        margin-bottom: 30px;
+    .stButton>button {
+        background-color: #1f77b4;
+        color: white;
+        border-radius: 8px;
+        height: 3em;
+        width: 100%;
     }
     .card {
-        background-color: #F3F4F6;
-        padding: 20px;
-        border-radius: 10px;
-        border-right: 5px solid #3B82F6;
-        margin-bottom: 20px;
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        border: 1px solid #e5e7eb;
     }
-    </style>
-    """,
-    unsafe_allow_html=True,
+</style>
+""", unsafe_allow_html=True)
+
+st.title("💧 سامانه تحلیل گزارش‌های فنی آب")
+
+st.write(
+    "فایل PDF گزارش را بارگذاری کنید، سپس روی «پردازش اسناد» کلیک کنید و سوال خود را بپرسید."
 )
 
-st.markdown(
-    '<div class="main-title">💧 سامانه هوشمند تحلیل فنی پروژه‌های آب و خاک</div>',
-    unsafe_allow_html=True,
-)
+# ----------------------------
+# کلید API
+# ----------------------------
+def get_openai_key():
+    return (
+        os.environ.get("OPENAI_API_KEY")
+        or st.secrets.get("OPENAI_API_KEY", "")
+        or ""
+    )
 
-st.markdown(
-    '<div class="sub-title">تحلیل و انطباق فنی اسناد، آیین‌نامه‌ها و طرح‌های آبیاری بر پایه هوش مصنوعی</div>',
-    unsafe_allow_html=True,
-)
+openai_api_key = get_openai_key()
 
 with st.sidebar:
-    st.markdown("### راهنمای مدیران و ناظران فنی")
-    st.info("این سامانه برای بارگذاری اسناد فنی و پاسخ‌گویی تحلیلی بر اساس همان اسناد طراحی شده است.")
+    st.header("تنظیمات")
+
+    api_key_input = st.text_input(
+        "کلید OpenAI API را وارد کنید:",
+        type="password",
+        value=openai_api_key if openai_api_key else "",
+    )
+
+    if api_key_input:
+        os.environ["OPENAI_API_KEY"] = api_key_input
+        openai_api_key = api_key_input
+
     st.markdown("---")
+    st.caption("اگر کلید را در Streamlit Secrets گذاشته‌اید، اینجا لازم نیست دوباره وارد کنید.")
 
-    st.markdown("### تنظیمات مدل")
+# ----------------------------
+# اعتبارسنجی کلید
+# ----------------------------
+if not openai_api_key:
+    st.warning("کلید OPENAI_API_KEY یافت نشد. لطفاً آن را در سایدبار یا Secrets وارد کنید.")
+    st.stop()
 
-    anthropic_key_input = st.text_input("کلید API Anthropic را وارد کنید:", type="password")
-    if anthropic_key_input:
-        os.environ["ANTHROPIC_API_KEY"] = anthropic_key_input
-
-    openai_key_input = st.text_input("کلید API OpenAI را وارد کنید:", type="password")
-    if openai_key_input:
-        os.environ["OPENAI_API_KEY"] = openai_key_input
-
-if "db_ready" not in st.session_state:
-    st.session_state.db_ready = False
+# ----------------------------
+# آپلود فایل
+# ----------------------------
+uploaded_files = st.file_uploader(
+    "فایل‌های PDF را بارگذاری کنید",
+    type=["pdf"],
+    accept_multiple_files=True
+)
 
 if "qa_chain" not in st.session_state:
     st.session_state.qa_chain = None
+if "source_docs" not in st.session_state:
+    st.session_state.source_docs = []
 
-st.subheader("۱. بارگذاری اسناد فنی پروژه")
+# ----------------------------
+# پردازش اسناد
+# ----------------------------
+if st.button("پردازش اسناد"):
+    if not uploaded_files:
+        st.error("لطفاً حداقل یک فایل PDF بارگذاری کنید.")
+        st.stop()
 
-uploaded_files = st.file_uploader(
-    "اسناد PDF متنی را بارگذاری کنید (حداکثر ۱۰ فایل)",
-    type=["pdf"],
-    accept_multiple_files=True,
-)
+    try:
+        all_docs = []
 
-if uploaded_files:
-    if len(uploaded_files) > 10:
-        st.error("لطفاً حداکثر ۱۰ فایل بارگذاری کنید.")
-    else:
-        st.success(f"{len(uploaded_files)} فایل با موفقیت دریافت شد.")
+        for uploaded_file in uploaded_files:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                tmp_file.write(uploaded_file.read())
+                temp_path = tmp_file.name
 
-        if st.button("پردازش اسناد و تحلیل اولیه ⚙️"):
-            anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
-            openai_api_key = os.environ.get("OPENAI_API_KEY")
+            loader = PyPDFLoader(temp_path)
+            docs = loader.load()
 
-            if not anthropic_api_key:
-                st.error("کلید ANTHROPIC_API_KEY یافت نشد. لطفاً آن را در سایدبار وارد کنید.")
-                st.stop()
+            for d in docs:
+                d.metadata["source_name"] = uploaded_file.name
 
-            if not openai_api_key:
-                st.error("کلید OPENAI_API_KEY یافت نشد. لطفاً آن را در سایدبار وارد کنید.")
-                st.stop()
+            all_docs.extend(docs)
+            os.unlink(temp_path)
 
-            with st.spinner("در حال پردازش و ساخت پایگاه دانش..."):
-                all_docs = []
+        if not all_docs:
+            st.error("هیچ متنی از PDF استخراج نشد. احتمالاً فایل اسکن‌شده یا تصویری است.")
+            st.stop()
 
-                splitter = RecursiveCharacterTextSplitter(
-                    chunk_size=700,
-                    chunk_overlap=120
-                )
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=700,
+            chunk_overlap=120,
+            separators=["\n\n", "\n", " ", ""]
+        )
+        chunks = splitter.split_documents(all_docs)
 
-                for uploaded_file in uploaded_files:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                        tmp_file.write(uploaded_file.read())
-                        tmp_path = tmp_file.name
+        if not chunks:
+            st.error("هیچ chunkی ساخته نشد. محتوای PDF قابل پردازش نیست.")
+            st.stop()
 
-                    loader = PyPDFLoader(tmp_path)
-                    pages = loader.load()
+        st.info(f"{len(all_docs)} صفحه/سند خوانده شد و {len(chunks)} بخش ساخته شد.")
 
-                    for p in pages:
-                        p.metadata["source_name"] = uploaded_file.name
+        embeddings = OpenAIEmbeddings(
+            api_key=openai_api_key,
+            model="text-embedding-3-small"
+        )
 
-                    all_docs.extend(pages)
+        vectorstore = FAISS.from_documents(chunks, embeddings)
 
-                    os.unlink(tmp_path)
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
-                if not all_docs:
-                    st.error("هیچ متنی از فایل‌های PDF استخراج نشد. لطفاً PDF متنی و قابل خواندن بارگذاری کنید.")
-                    st.stop()
+        llm = ChatOpenAI(
+            api_key=openai_api_key,
+            model="gpt-4o-mini",
+            temperature=0.15
+        )
 
-                chunks = splitter.split_documents(all_docs)
+        st.session_state.qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            retriever=retriever,
+            return_source_documents=True,
+            chain_type="stuff"
+        )
 
-                embeddings = OpenAIEmbeddings(
-                    api_key=openai_api_key
-                )
+        st.session_state.source_docs = chunks
 
-                # ساخت دیتابیس برداری با استفاده از FAISS به جای Chroma
-                vectordb = FAISS.from_documents(
-                    documents=chunks,
-                    embedding=embeddings
-                )
+        st.success("اسناد با موفقیت پردازش شدند. حالا می‌توانید سوال بپرسید.")
 
-                prompt_template = """
-تو یک مهندس مشاور و تحلیل‌گر ارشد حوزه آب و خاک و هیدرولیک هستی.
-پاسخ‌ها باید کاملاً فنی، مستند و مبتنی بر اسناد بارگذاری‌شده باشند.
-اگر پاسخ در اسناد یافت نشد، صراحتاً بگو اطلاعات مربوطه در اسناد موجود نیست.
+    except Exception as e:
+        st.error(f"خطا در پردازش اسناد: {e}")
+        st.stop()
 
-اسناد:
-{context}
+# ----------------------------
+# پرسش از اسناد
+# ----------------------------
+if st.session_state.qa_chain:
+    user_question = st.text_input("سوال خود را درباره اسناد وارد کنید:")
 
-سوال کاربر:
-{question}
+    if st.button("پرسش"):
+        if not user_question.strip():
+            st.warning("لطفاً یک سوال وارد کنید.")
+            st.stop()
 
-خروجی را در این ساختار ارائه کن:
-- خلاصه و نتیجه‌گیری تحلیل
-- یافته‌ها و مغایرت‌های فنی
-- توصیه‌ها و اقدامات پیشنهادی
-- اسناد مرجع
-"""
-
-                prompt = PromptTemplate(
-                    template=prompt_template,
-                    input_variables=["context", "question"]
-                )
-
-                retriever = vectordb.as_retriever(
-                    search_kwargs={"k": 5}
-                )
-
-                llm = ChatAnthropic(
-                    model="claude-3-5-sonnet-latest",
-                    temperature=0.15,
-                    anthropic_api_key=anthropic_api_key
-                )
-
-                st.session_state.qa_chain = RetrievalQA.from_chain_type(
-                    llm=llm,
-                    chain_type="stuff",
-                    retriever=retriever,
-                    return_source_documents=True,
-                    chain_type_kwargs={"prompt": prompt},
-                )
-
-                st.session_state.db_ready = True
-
-                st.success("پایگاه دانش ساخته شد. اکنون سوال خود را بپرسید.")
-
-st.markdown("---")
-
-st.subheader("۲. تحلیل فنی و پرسش از اسناد")
-
-user_question = st.text_input(
-    "سوال فنی خود را بنویسید:",
-    placeholder="مثلاً: آیا ظرفیت پمپ‌ها با نیاز طرح همخوانی دارد؟",
-)
-
-if st.button("شروع تحلیل هوشمند 🧠"):
-    if not st.session_state.db_ready:
-        st.warning("ابتدا اسناد را پردازش کنید.")
-    elif not user_question.strip():
-        st.warning("لطفاً سوال را وارد کنید.")
-    else:
-        with st.spinner("در حال تحلیل... لطفاً صبر کنید."):
+        try:
             response = st.session_state.qa_chain.invoke({"query": user_question})
 
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown("### 📋 نتیجه ارزیابی فنی")
-            st.write(response["result"])
+            st.markdown("### پاسخ")
+            st.write(response.get("result", "پاسخی دریافت نشد."))
             st.markdown("</div>", unsafe_allow_html=True)
 
-            with st.expander("🔍 مشاهده قطعات استخراج‌شده از اسناد"):
-                for i, doc in enumerate(response["source_documents"], 1):
-                    file_name = doc.metadata.get("source_name", "سند نامشخص")
-                    page_num = doc.metadata.get("page", 0) + 1
+            source_documents = response.get("source_documents", [])
+            if source_documents:
+                with st.expander("مشاهده منابع"):
+                    for i, doc in enumerate(source_documents, 1):
+                        file_name = doc.metadata.get("source_name", "سند نامشخص")
+                        page_num = doc.metadata.get("page", 0) + 1
+                        st.markdown(f"**منبع {i}:** `{file_name}` | صفحه {page_num}")
+                        st.info(doc.page_content)
 
-                    st.markdown(
-                        f"**بخش {i}:** سند: `{file_name}` | صفحه: `{page_num}`"
-                    )
-
-                    st.info(doc.page_content)
+        except Exception as e:
+            st.error(f"خطا در زمان پاسخ‌دهی: {e}")
+else:
+    st.info("ابتدا اسناد را پردازش کنید.")
