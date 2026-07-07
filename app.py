@@ -249,12 +249,20 @@ def answer_question(vectorstore, question: str, api_key: str, model_name: str, t
             ("human", question),
         ])
         return response.content, relevant_docs
-    except RateLimitError:
+    except RateLimitError as e:
+        print(f"[RateLimitError] {e}")
         st.error("محدودیت نرخ درخواست به API فعال شده است. کمی صبر کنید و دوباره تلاش کنید.")
-    except APIConnectionError:
+    except APIConnectionError as e:
+        print(f"[APIConnectionError] {e}")
         st.error("اتصال به سرویس Claude برقرار نشد. اتصال اینترنت را بررسی کنید.")
     except APIStatusError as e:
+        print(f"[APIStatusError] status={e.status_code} body={e.body}")
         st.error(f"خطا در پاسخ سرویس Claude: {e}")
+    except Exception as e:
+        import traceback
+        print(f"[Unexpected Error] {e}")
+        traceback.print_exc()
+        st.error(f"خطای غیرمنتظره: {e}")
     return None, []
 
 
