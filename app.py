@@ -161,8 +161,7 @@ HF_TOKEN = "YOUR_HF_TOKEN"
         "مدل زبانی (متن‌باز، پشتیبان فارسی)",
         [
             "deepseek-ai/DeepSeek-V3-0324",
-            "moonshotai/Kimi-K2-Instruct-0905",
-            "Qwen/Qwen2.5-7B-Instruct",
+            "meta-llama/Llama-3.3-70B-Instruct",
         ],
         index=0
     )
@@ -243,7 +242,7 @@ def answer_question(vectorstore, question: str, hf_token: str, model_name: str, 
     )
 
     try:
-        client = InferenceClient(model=model_name, token=hf_token, provider="auto")
+        client = InferenceClient(model=model_name, token=hf_token, provider="sambanova")
         response = client.chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
