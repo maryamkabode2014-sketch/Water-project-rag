@@ -3,7 +3,8 @@ langchain==0.2.16
 langchain-core==0.2.38
 langchain-community==0.2.16
 langchain-anthropic==0.1.23
+anthropic==0.34.2
 langchain-huggingface==0.0.3
 sentence-transformers==3.0.1
 faiss-cpu==1.8.0.post1
-pdfplumber==0.11.4
+pdfplumber==0.
