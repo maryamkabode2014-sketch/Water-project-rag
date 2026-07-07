@@ -242,7 +242,7 @@ def answer_question(vectorstore, question: str, hf_token: str, model_name: str, 
     )
 
     try:
-        client = InferenceClient(model=model_name, token=hf_token, provider="sambanova")
+        client = InferenceClient(model=model_name, token=hf_token, provider="together")
         response = client.chat_completion(
             messages=[
                 {"role": "system", "content": system_prompt},
