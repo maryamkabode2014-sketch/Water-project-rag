@@ -7,9 +7,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_anthropic import ChatAnthropic
-
-from anthropic import APIConnectionError, APIStatusError, RateLimitError
+from huggingface_hub import InferenceClient
+from huggingface_hub.errors import HfHubHTTPError
 
 # ---------------------------
 # Page Config
@@ -127,7 +126,7 @@ html, body, [class*="css"]  {
 st.markdown("""
 <div class="app-header">
     <h1>💧 تحلیل هوشمند گزارش‌های فنی آب و خاک</h1>
-    <p>بارگذاری PDF، پردازش سند، و پرسش‌وپاسخ فارسی با Claude</p>
+    <p>بارگذاری PDF، پردازش سند، و پرسش‌وپاسخ فارسی با هوش مصنوعی</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -142,12 +141,15 @@ st.markdown("""
 # ---------------------------
 with st.sidebar:
     st.header("⚙️ تنظیمات")
-    st.caption("برای امنیت، کلید API فقط از Streamlit Secrets خوانده می‌شود.")
+    st.caption("برای امنیت، توکن Hugging Face فقط از Streamlit Secrets خوانده می‌شود.")
     st.markdown("""
 **نام Secret موردنیاز:**
 ```toml
-ANTHROPIC_API_KEY = "YOUR_NEW_KEY"
+HF_TOKEN = "YOUR_HF_TOKEN"
 ```
+توکن رایگان را از این آدرس بساز:
+[huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+(نوع دسترسی: Read کافی است)
 """)
 
     st.divider()
@@ -156,8 +158,12 @@ ANTHROPIC_API_KEY = "YOUR_NEW_KEY"
     chunk_overlap = st.slider("همپوشانی بخش‌ها (کاراکتر)", 0, 500, 150, step=50)
     top_k = st.slider("تعداد بخش‌های مرتبط برای پاسخ", 1, 10, 4)
     model_name = st.selectbox(
-        "مدل Claude",
-        ["claude-sonnet-5", "claude-haiku-4-5-20251001", "claude-opus-4-8"],
+        "مدل زبانی (متن‌باز، پشتیبان فارسی)",
+        [
+            "Qwen/Qwen2.5-7B-Instruct",
+            "CohereForAI/aya-expanse-8b",
+            "mistralai/Mistral-7B-Instruct-v0.3",
+        ],
         index=0
     )
 
@@ -170,12 +176,12 @@ ANTHROPIC_API_KEY = "YOUR_NEW_KEY"
 # ---------------------------
 # Helpers
 # ---------------------------
-def get_api_key():
-    key = st.secrets.get("ANTHROPIC_API_KEY", None)
-    if not key:
-        st.error("کلید ANTHROPIC_API_KEY در Streamlit Secrets تنظیم نشده است.")
+def get_hf_token():
+    token = st.secrets.get("HF_TOKEN", None)
+    if not token:
+        st.error("توکن HF_TOKEN در Streamlit Secrets تنظیم نشده است.")
         st.stop()
-    return key
+    return token
 
 
 @st.cache_resource(show_spinner=False)
@@ -221,7 +227,7 @@ def build_vectorstore(pages: list[dict], chunk_size: int, chunk_overlap: int):
     return vectorstore
 
 
-def answer_question(vectorstore, question: str, api_key: str, model_name: str, top_k: int):
+def answer_question(vectorstore, question: str, hf_token: str, model_name: str, top_k: int):
     relevant_docs = vectorstore.similarity_search(question, k=top_k)
 
     context = "\n\n---\n\n".join(
@@ -236,33 +242,26 @@ def answer_question(vectorstore, question: str, api_key: str, model_name: str, t
         f"متن سند:\n{context}"
     )
 
-    llm = ChatAnthropic(
-        model=model_name,
-        anthropic_api_key=api_key,
-        max_tokens=1500,
-        temperature=0.2,
-    )
-
     try:
-        response = llm.invoke([
-            ("system", system_prompt),
-            ("human", question),
-        ])
-        return response.content, relevant_docs
-    except RateLimitError as e:
-        print(f"[RateLimitError] {e}")
-        st.error("محدودیت نرخ درخواست به API فعال شده است. کمی صبر کنید و دوباره تلاش کنید.")
-    except APIConnectionError as e:
-        print(f"[APIConnectionError] {e}")
-        st.error("اتصال به سرویس Claude برقرار نشد. اتصال اینترنت را بررسی کنید.")
-    except APIStatusError as e:
-        print(f"[APIStatusError] status={e.status_code} body={e.body}")
-        st.error(f"خطا در پاسخ سرویس Claude: {e}")
+        client = InferenceClient(model=model_name, token=hf_token)
+        response = client.chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question},
+            ],
+            max_tokens=1500,
+            temperature=0.2,
+        )
+        answer = response.choices[0].message.content
+        return answer, relevant_docs
+    except HfHubHTTPError as e:
+        print(f"[HfHubHTTPError] {e}")
+        st.error(f"خطا در ارتباط با سرویس Hugging Face: {e}")
     except Exception as e:
         import traceback
-        print(f"[Unexpected Error] {e}")
+        print(f"[Unexpected Error] {type(e).__name__}: {e}")
         traceback.print_exc()
-        st.error(f"خطای غیرمنتظره: {e}")
+        st.error(f"خطای غیرمنتظره: {type(e).__name__}: {e}")
     return None, []
 
 
@@ -316,10 +315,10 @@ if st.session_state.vectorstore is not None:
         if not question.strip():
             st.warning("لطفاً یک سؤال وارد کنید.")
         else:
-            api_key = get_api_key()
+            hf_token = get_hf_token()
             with st.spinner("در حال تحلیل و تولید پاسخ..."):
                 answer, sources = answer_question(
-                    st.session_state.vectorstore, question, api_key, model_name, top_k
+                    st.session_state.vectorstore, question, hf_token, model_name, top_k
                 )
             if answer:
                 st.session_state.chat_history.insert(0, {
@@ -347,6 +346,6 @@ else:
 # ---------------------------
 st.markdown("""
 <div class="footer-box">
-ساخته‌شده برای تحلیل تخصصی گزارش‌های آب و خاک 💧 | قدرت‌گرفته از Claude
+ساخته‌شده برای تحلیل تخصصی گزارش‌های آب و خاک 💧 | قدرت‌گرفته از مدل‌های زبانی متن‌باز
 </div>
 """, unsafe_allow_html=True)
