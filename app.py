@@ -64,10 +64,10 @@ if st.button("پردازش اسناد"):
             # ذخیره در حافظه موقت FAISS
             vectorstore = FAISS.from_documents(chunks, embeddings)
             
-            # تنظیم مدل Claude
+            # تنظیم مدل Claude به آخرین نسخه پایدار
             llm = ChatAnthropic(
                 anthropic_api_key=anthropic_api_key,
-                model_name="claude-3-5-sonnet-20240620",
+                model_name="claude-3-5-sonnet-latest",
                 temperature=0.1
             )
 
@@ -79,16 +79,20 @@ if st.button("پردازش اسناد"):
             st.success("اسناد با موفقیت پردازش شدند. آماده پاسخگویی!")
 
         except Exception as e:
-            st.error(f"خطا در پردازش: {e}")
+            st.error(f"خطا در پردازش اسناد: {e}")
 
 # بخش پرسش و پاسخ
 if st.session_state.qa_chain:
     query = st.text_input("سوال فنی خود را بپرسید:")
     if st.button("تحلیل") and query:
-        res = st.session_state.qa_chain.invoke({"query": query})
-        st.markdown("### 📋 پاسخ نهایی:")
-        st.write(res["result"])
-        
-        with st.expander("منابع استخراج شده"):
-            for doc in res["source_documents"]:
-                st.write(f"📄 منبع: {doc.metadata['source']} | محتوا: {doc.page_content[:200]}...")
+        try:
+            res = st.session_state.qa_chain.invoke({"query": query})
+            st.markdown("### 📋 پاسخ نهایی:")
+            st.write(res["result"])
+            
+            with st.expander("منابع استخراج شده"):
+                for doc in res["source_documents"]:
+                    st.write(f"📄 منبع: {doc.metadata['source']} | محتوا: {doc.page_content[:200]}...")
+        except Exception as api_err:
+            st.error(f"خطا در ارتباط با سرور Claude هوش مصنوعی: {api_err}")
+            st.info("نکته: لطفاً اعتبار مالی و صحت کلید API خود را در پنل کاربری Anthropic (بخش Billing) بررسی کنید.")
