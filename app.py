@@ -7,7 +7,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_anthropic import ChatAnthropic
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 
@@ -141,7 +141,8 @@ if uploaded_files:
                     api_key=openai_api_key
                 )
 
-                vectordb = Chroma.from_documents(
+                # ساخت دیتابیس برداری با استفاده از FAISS به جای Chroma
+                vectordb = FAISS.from_documents(
                     documents=chunks,
                     embedding=embeddings
                 )
