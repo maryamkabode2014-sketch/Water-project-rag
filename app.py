@@ -252,12 +252,12 @@ def answer_question(vectorstore, question: str, hf_token: str, model_name: str, 
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},
         ],
-        "max_tokens": 1500,
+        "max_tokens": 1000,
         "temperature": 0.2,
     }
 
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=90)
+        resp = requests.post(url, headers=headers, json=payload, timeout=180)
         resp.raise_for_status()
         data = resp.json()
         answer = data["choices"][0]["message"]["content"]
