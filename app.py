@@ -153,7 +153,7 @@ HF_TOKEN = "YOUR_HF_TOKEN"
 
     st.divider()
 
-    chunk_size = st.slider("اندازه هر بخش متن (کاراکتر)", 500, 3000, 1200, step=100)
+    chunk_size = st.slider("اندازه هر بخش متن (کاراکتر)", 500, 3000, 1000, step=100)
     chunk_overlap = st.slider("همپوشانی بخش‌ها (کاراکتر)", 0, 500, 150, step=50)
     top_k = st.slider("تعداد بخش‌های مرتبط برای پاسخ", 1, 15, 8)
     model_name = st.selectbox(
@@ -186,10 +186,9 @@ def get_hf_token():
 
 @st.cache_resource(show_spinner=False)
 def get_embeddings():
-    # مدل چندزبانه‌ی مخصوص بازیابی (retrieval) با پشتیبانی خیلی بهتر از فارسی
-    # نکته: مدل‌های E5 نیاز به پیشوند "query: " برای سؤال و "passage: " برای متن سند دارند
+    # مدل سبک‌تر مخصوص بازیابی، برای جلوگیری از اتمام حافظه روی سرور رایگان
     return HuggingFaceEmbeddings(
-        model_name="intfloat/multilingual-e5-base"
+        model_name="intfloat/multilingual-e5-small"
     )
 
 
