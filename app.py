@@ -186,9 +186,10 @@ def get_hf_token():
 
 @st.cache_resource(show_spinner=False)
 def get_embeddings():
-    # مدل چندزبانه که فارسی را نیز پشتیبانی می‌کند
+    # مدل چندزبانه‌ی مخصوص بازیابی (retrieval) با پشتیبانی خیلی بهتر از فارسی
+    # نکته: مدل‌های E5 نیاز به پیشوند "query: " برای سؤال و "passage: " برای متن سند دارند
     return HuggingFaceEmbeddings(
-        model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        model_name="intfloat/multilingual-e5-base"
     )
 
 
@@ -215,8 +216,8 @@ def build_vectorstore(pages: list[dict], chunk_size: int, chunk_overlap: int):
         chunks = splitter.split_text(p["text"])
         for chunk in chunks:
             docs.append(Document(
-                page_content=chunk,
-                metadata={"page": p["page"]}
+                page_content="passage: " + chunk,
+                metadata={"page": p["page"], "raw_text": chunk}
             ))
 
     if not docs:
@@ -228,10 +229,11 @@ def build_vectorstore(pages: list[dict], chunk_size: int, chunk_overlap: int):
 
 
 def answer_question(vectorstore, question: str, hf_token: str, model_name: str, top_k: int):
-    relevant_docs = vectorstore.similarity_search(question, k=top_k)
+    relevant_docs = vectorstore.similarity_search("query: " + question, k=top_k)
 
     context = "\n\n---\n\n".join(
-        f"[صفحه {d.metadata.get('page', '?')}]\n{d.page_content}" for d in relevant_docs
+        f"[صفحه {d.metadata.get('page', '?')}]\n{d.metadata.get('raw_text', d.page_content)}"
+        for d in relevant_docs
     )
 
     system_prompt = (
@@ -353,8 +355,9 @@ if st.session_state.vectorstore is not None:
         st.markdown(f'<div class="answer-box">{item["answer"]}</div>', unsafe_allow_html=True)
         with st.expander("📚 منابع استفاده‌شده از سند"):
             for d in item["sources"]:
+                clean_text = d.metadata.get("raw_text", d.page_content)
                 st.markdown(
-                    f'<div class="source-box">صفحه {d.metadata.get("page", "?")}: {d.page_content[:300]}...</div>',
+                    f'<div class="source-box">صفحه {d.metadata.get("page", "?")}: {clean_text[:300]}...</div>',
                     unsafe_allow_html=True
                 )
         st.divider()
